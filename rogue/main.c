@@ -2,6 +2,10 @@
 #include <stdlib.h>
 #include <time.h>
 
+// 색상
+#define VISIBLE_COLOR 1
+#define SEEN_COLOR 2
+
 typedef struct
 {
     int y;  // y 좌표
@@ -11,7 +15,11 @@ typedef struct
 typedef struct
 {
     char ch;    // 타일 문자
+    int color;
     bool walkable;  // 진입 가능 여부
+    bool transparent;
+    bool visible;
+    bool seen;
 } Tile; // 타일 구조체
 
 typedef struct
@@ -26,6 +34,7 @@ typedef struct
 {
     Position pos;	// 개체 좌표
     char ch;	// 개체 문자
+    int color;
 } Entity;	// 개체 구조체
 
 // draw 함수
@@ -53,6 +62,14 @@ Room createRoom(int y, int x, int height, int width);
 void addRoomToMap(Room room);
 void connectRoomCenters(Position centerOne, Position centerTwo);
 
+// fov 함수
+void makeFOV(Entity* player);
+void clearFOV(Entity * player);
+int getDistance(Position origin, Position target);
+bool isInMap(int y, int x);
+bool lineOfSight(Position origin, Position target);
+int getSign(int a);
+
 const int MAP_HEIGHT = 25;
 const int MAP_WIDTH = 100;
 
@@ -66,14 +83,25 @@ void drawMap(void)
     {
         for (int x = 0; x < MAP_WIDTH; x++)
         {
-            mvaddch(y, x, map[y][x].ch);
+            if (map[y][x].visible)
+            {
+                mvaddch(y, x, map[y][x].ch | map[y][x].color);
+            }
+            else if (map[y][x].seen)
+            {
+                mvaddch(y, x, map[y][x].ch | COLOR_PAIR(SEEN_COLOR));
+            }
+            else
+            {
+                mvaddch(y, x, ' ');
+            }
         }
     }
 }
 
 void drawEntity(Entity* entity)
 {
-    mvaddch(entity->pos.y, entity->pos.x, entity->ch);
+    mvaddch(entity->pos.y, entity->pos.x, entity->ch | entity->color);
 }
 
 void drawEverything(void)
@@ -89,12 +117,21 @@ void cursesSetup(void)
     initscr();
     noecho();
     curs_set(0);
+
+    if (has_colors())
+    {
+        start_color();
+
+        init_pair(VISIBLE_COLOR, COLOR_WHITE, COLOR_BLACK);
+        init_pair(SEEN_COLOR, COLOR_BLUE, COLOR_BLACK);
+    }
 }
 
 void gameLoop(void)
 {
     int ch;
 
+    makeFOV(player);
     drawEverything();
 
     while (ch = getch())
@@ -126,7 +163,11 @@ Tile** createMapTiles(void)
         for (int x = 0; x < MAP_WIDTH; x++)
         {
             tiles[y][x].ch = '#';
+            tiles[y][x].color = COLOR_PAIR(VISIBLE_COLOR);
             tiles[y][x].walkable = FALSE;
+            tiles[y][x].transparent = FALSE;
+            tiles[y][x].visible = FALSE;
+            tiles[y][x].seen = FALSE;
         }
     }
 
@@ -180,6 +221,7 @@ Entity* createPlayer(Position start_pos)
     newPlayer->pos.y = start_pos.y;
     newPlayer->pos.x = start_pos.x;
     newPlayer->ch = '@';
+    newPlayer->color = COLOR_PAIR(VISIBLE_COLOR);
 
     return newPlayer;
 }
@@ -192,19 +234,19 @@ void handleInput(int input)
     switch (input)
     {
         //move up
-    case 'k':
+    case 'w':
         newPos.y--;
         break;
         //move down
-    case 'j':
+    case 's':
         newPos.y++;
         break;
         //move left
-    case 'h':
+    case 'a':
         newPos.x--;
         break;
         //move right
-    case 'l':
+    case 'd':
         newPos.x++;
         break;
     default:
@@ -218,8 +260,10 @@ void movePlayer(Position newPos)    // 목적지 이동 함수
 {
     if (map[newPos.y][newPos.x].walkable)   // 이동 목적지가 진입 가능하면
     {
+        clearFOV(player);
         player->pos.y = newPos.y;
         player->pos.x = newPos.x;
+        makeFOV(player);
     }
 }
 
@@ -246,6 +290,7 @@ void addRoomToMap(Room room)
         {
             map[y][x].ch = '.';
             map[y][x].walkable = TRUE;
+            map[y][x].transparent = TRUE;
         }
     }
 }
@@ -271,7 +316,143 @@ void connectRoomCenters(Position centerOne, Position centerTwo)
 
         map[temp.y][temp.x].ch = '.';
         map[temp.y][temp.x].walkable = TRUE;
+        map[temp.y][temp.x].transparent = TRUE;
     }
+}
+
+//fov
+void makeFOV(Entity* player)
+{
+    int y, x, distance;
+    int RADIUS = 15;
+    Position target;
+
+    map[player->pos.y][player->pos.x].visible = TRUE;
+    map[player->pos.y][player->pos.x].seen = TRUE;
+
+    for (y = player->pos.y - RADIUS; y < player->pos.y + RADIUS; y++)
+    {
+        for (x = player->pos.x - RADIUS; x < player->pos.x + RADIUS; x++)
+        {
+            target.y = y;
+            target.x = x;
+            distance = getDistance(player->pos, target);
+
+            if (distance < RADIUS)
+            {
+                if (isInMap(y, x) && lineOfSight(player->pos, target))
+                {
+                    map[y][x].visible = TRUE;
+                    map[y][x].seen = TRUE;
+                }
+            }
+        }
+    }
+}
+
+void clearFOV(Entity* player)
+{
+    int y, x;
+    int RADIUS = 15;
+
+    for (y = player->pos.y - RADIUS; y < player->pos.y + RADIUS; y++)
+    {
+        for (x = player->pos.x - RADIUS; x < player->pos.x + RADIUS; x++)
+        {
+            if (isInMap(y, x))
+                map[y][x].visible = FALSE;
+        }
+    }
+}
+
+int getDistance(Position origin, Position target)
+{
+    double dy, dx;
+    int distance;
+    dx = target.x - origin.x;
+    dy = target.y - origin.y;
+    distance = floor(sqrt((dx * dx) + (dy * dy)));
+
+    return distance;
+}
+
+bool isInMap(int y, int x)
+{
+    if ((0 < y && y < MAP_HEIGHT - 1) && (0 < x && x < MAP_WIDTH - 1))
+    {
+        return TRUE;
+    }
+
+    return FALSE;
+}
+
+bool lineOfSight(Position origin, Position target)
+{
+    int t, x, y, abs_delta_x, abs_delta_y, sign_x, sign_y, delta_x, delta_y;
+
+    delta_x = origin.x - target.x;
+    delta_y = origin.y - target.y;
+
+    abs_delta_x = abs(delta_x);
+    abs_delta_y = abs(delta_y);
+
+    sign_x = getSign(delta_x);
+    sign_y = getSign(delta_y);
+
+    x = target.x;
+    y = target.y;
+
+    if (abs_delta_x > abs_delta_y)
+    {
+        t = abs_delta_y * 2 - abs_delta_x;
+
+        do
+        {
+            if (t >= 0)
+            {
+                y += sign_y;
+                t -= abs_delta_x * 2;
+            }
+
+            x += sign_x;
+            t += abs_delta_y * 2;
+
+            if (x == origin.x && y == origin.y)
+            {
+                return TRUE;
+            }
+        } while (map[y][x].transparent);
+
+        return FALSE;
+    }
+    else
+    {
+        t = abs_delta_x * 2 - abs_delta_y;
+
+        do
+        {
+            if (t >= 0)
+            {
+                x += sign_x;
+                t -= abs_delta_y * 2;
+            }
+
+            y += sign_y;
+            t += abs_delta_x * 2;
+
+            if (x == origin.x && y == origin.y)
+            {
+                return TRUE;
+            }
+        } while (map[y][x].transparent);
+
+        return FALSE;
+    }
+}
+
+int getSign(int a)
+{
+    return (a < 0) ? -1 : 1;
 }
 
 // main
