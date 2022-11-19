@@ -473,12 +473,12 @@ int main(void)
     srand(time(NULL));  // 현재 시각을 난수 시드로 설정
 
     map = createMapTiles(); // 맵 생성
-    start_pos = setupMap();
-    player = createPlayer(start_pos);
+    start_pos = setupMap(); // 방 정보 설정 및 시작 좌표 설정
+    player = createPlayer(start_pos);   // 시작 좌표에 플레이어 생성
 
-    gameLoop();
+    gameLoop(); // 게임 실행
 
-    closeGame();
+    closeGame();    // 게임 종료
 
     return 0;
 }
