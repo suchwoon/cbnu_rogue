@@ -69,7 +69,7 @@ bool isInMap(int y, int x); // 좌표 맵 내부 여부 판별 함수
 bool lineOfSight(Position origin, Position target); // 좌표 직선 시야 여부 판별 함수 (Bresenham's Line Drawing Algorithm)
 int getSign(int a); // 정수 음양 판별 함수
 
-// 전역변수 & 정적변수(const)
+// 전역변수 & 상수 (const)
 const int MAP_HEIGHT = 25;  // 맵 높이
 const int MAP_WIDTH = 100;  // 맵 너비
 
@@ -305,7 +305,7 @@ void connectRoomCenters(Position centerOne, Position centerTwo) // 두 방 연결 함
 {
     Position temp;  // 임시 좌표 구조체 변수
     temp.x = centerOne.x;   // 임시 x좌표 = 첫 번째 방 중심 x좌표
-    temp.y = centerOne.y;   // 임시 y좌표 = 두 번째 방 중심 y좌표
+    temp.y = centerOne.y;   // 임시 y좌표 = 첫 번째 방 중심 y좌표
 
     // 첫 번째 방과 두 번째 방 사이의 최단거리 도출 과정
     while (TRUE)
